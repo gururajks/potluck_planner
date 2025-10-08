@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Guru/Suhasini Diwali Potluck Dinner 2025</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="container">
+      <h1>Guru/Suhasini Diwali Potluck Dinner 2025</h1>
+      <p class="muted">Add your name and what you are bringing</p>
+    </header>
+
+    <main class="container">
+      <section class="card">
+        <form id="item-form" class="grid">
+          <div class="field">
+            <label for="name">Your name</label>
+            <input id="name" name="name" type="text" placeholder="e.g., Sam" required />
+          </div>
+          <div class="field">
+            <label for="dish">Dish</label>
+            <input id="dish" name="dish" type="text" placeholder="e.g., Mac & Cheese" required />
+          </div>
+          <div class="field">
+            <label for="section">Section</label>
+            <select id="section" name="section" required>
+              <option value="appetizers">Appetizers</option>
+              <option value="entree">Entree</option>
+              <option value="dessert">Dessert</option>
+              <option value="beverages">Beverages</option>
+            </select>
+          </div>
+          <div class="actions">
+            <button type="submit">Add</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="lists" class="lists">
+        <div class="list-card" data-section="appetizers">
+          <h2>Appetizers</h2>
+          <ul class="items" id="list-appetizers"></ul>
+        </div>
+        <div class="list-card" data-section="entree">
+          <h2>Entree</h2>
+          <ul class="items" id="list-entree"></ul>
+        </div>
+        <div class="list-card" data-section="dessert">
+          <h2>Dessert</h2>
+          <ul class="items" id="list-dessert"></ul>
+        </div>
+        <div class="list-card" data-section="beverages">
+          <h2>Beverages</h2>
+          <ul class="items" id="list-beverages"></ul>
+        </div>
+      </section>
+
+      <section id="summary" class="summary card">
+        <h2>Summary by Dishes</h2>
+        <div class="summary-grid">
+          <div>
+            <h3>Appetizers</h3>
+            <ul id="summary-appetizers" class="summary-items"></ul>
+          </div>
+          <div>
+            <h3>Entree</h3>
+            <ul id="summary-entree" class="summary-items"></ul>
+          </div>
+          <div>
+            <h3>Dessert</h3>
+            <ul id="summary-dessert" class="summary-items"></ul>
+          </div>
+          <div>
+            <h3>Beverages</h3>
+            <ul id="summary-beverages" class="summary-items"></ul>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="container muted">
+      <small>No login required. Be kind and edit only your entries.</small>
+    </footer>
+
+    <script src="/main.js" type="module"></script>
+  </body>
+  </html>
+
+
+
