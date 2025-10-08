@@ -24,6 +24,23 @@ const memoryStore = {
   items: new Map(), // id -> item
 };
 
+// Firestore helpers
+let firestoreDb = null;
+let itemsCollectionRef = null;
+
+async function getItemsCollection() {
+  if (!firestoreDb) {
+    const { initializeApp, applicationDefault } = await import('firebase-admin/app');
+    const { getFirestore } = await import('firebase-admin/firestore');
+    const appAdmin = initializeApp({ credential: applicationDefault() });
+    firestoreDb = getFirestore(appAdmin);
+  }
+  if (!itemsCollectionRef) {
+    itemsCollectionRef = firestoreDb.collection('items');
+  }
+  return itemsCollectionRef;
+}
+
 async function ensureDataFile() {
   await fs.mkdir(dataDir, { recursive: true });
   try {
@@ -35,20 +52,42 @@ async function ensureDataFile() {
 
 async function loadFromDisk() {
   try {
-    const raw = await fs.readFile(dataFilePath, 'utf-8');
-    const arr = JSON.parse(raw || '[]');
+    const col = await getItemsCollection();
+    const snapshot = await col.get();
     memoryStore.items.clear();
-    for (const it of Array.isArray(arr) ? arr : []) {
-      if (it && it.id) memoryStore.items.set(it.id, it);
+    for (const doc of snapshot.docs) {
+      const data = doc.data() || {};
+      memoryStore.items.set(doc.id, { id: doc.id, ...data });
     }
   } catch (err) {
-    console.error('Failed to load items from disk:', err);
+    console.error('Failed to load items from Firestore:', err);
   }
 }
 
 async function saveToDisk() {
-  const arr = Array.from(memoryStore.items.values());
-  await fs.writeFile(dataFilePath, JSON.stringify(arr, null, 2), 'utf-8');
+  try {
+    const col = await getItemsCollection();
+    const snapshot = await col.get();
+    const existingIds = new Set(snapshot.docs.map(d => d.id));
+    const desiredIds = new Set(Array.from(memoryStore.items.keys()));
+
+    const batch = firestoreDb.batch();
+    // Upsert all desired docs
+    for (const [id, item] of memoryStore.items.entries()) {
+      const { id: _omit, ...rest } = item;
+      batch.set(col.doc(id), rest, { merge: true });
+    }
+    // Delete any docs not present in memory
+    for (const id of existingIds) {
+      if (!desiredIds.has(id)) {
+        batch.delete(col.doc(id));
+      }
+    }
+
+    await batch.commit();
+  } catch (err) {
+    console.error('Failed to save items to Firestore:', err);
+  }
 }
 
 function validateItem(payload) {
