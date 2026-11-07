@@ -34,7 +34,7 @@ function initFirebase() {
   });
 }
 
-const firestoreDb = getFirestore(initFirebase());
+const firestoreDb = getFirestore(initFirebase(), 'potluckplanner');
 const itemsCollection = firestoreDb.collection('items');
 
 async function loadFromFirestore() {
