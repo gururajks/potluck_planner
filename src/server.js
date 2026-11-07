@@ -2,8 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import path from 'path';
-import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
+import { initializeApp, applicationDefault, getApps } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 
 // Resolve __dirname in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -15,45 +16,30 @@ app.use(cors());
 app.use(express.json());
 app.use(morgan('tiny'));
 
-// File-based persistence
-const dataDir = path.join(__dirname, '../data');
-const dataFilePath = path.join(dataDir, 'items.json');
-
-// In-memory store structure
+// In-memory cache of Firestore items
 const memoryStore = {
   items: new Map(), // id -> item
 };
 
-// Firestore helpers
-let firestoreDb = null;
-let itemsCollectionRef = null;
-
-async function getItemsCollection() {
-  if (!firestoreDb) {
-    const { initializeApp, applicationDefault } = await import('firebase-admin/app');
-    const { getFirestore } = await import('firebase-admin/firestore');
-    const appAdmin = initializeApp({ credential: applicationDefault() });
-    firestoreDb = getFirestore(appAdmin);
+function initFirebase() {
+  if (getApps().length) return getApps()[0];
+  const projectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+  // Emulator does not need real credentials
+  if (process.env.FIRESTORE_EMULATOR_HOST) {
+    return initializeApp({ projectId: projectId || 'demo-potluck' });
   }
-  if (!itemsCollectionRef) {
-    itemsCollectionRef = firestoreDb.collection('items');
-  }
-  return itemsCollectionRef;
+  return initializeApp({
+    credential: applicationDefault(),
+    projectId,
+  });
 }
 
-async function ensureDataFile() {
-  await fs.mkdir(dataDir, { recursive: true });
-  try {
-    await fs.access(dataFilePath);
-  } catch {
-    await fs.writeFile(dataFilePath, '[]', 'utf-8');
-  }
-}
+const firestoreDb = getFirestore(initFirebase());
+const itemsCollection = firestoreDb.collection('items');
 
-async function loadFromDisk() {
+async function loadFromFirestore() {
   try {
-    const col = await getItemsCollection();
-    const snapshot = await col.get();
+    const snapshot = await itemsCollection.get();
     memoryStore.items.clear();
     for (const doc of snapshot.docs) {
       const data = doc.data() || {};
@@ -64,29 +50,27 @@ async function loadFromDisk() {
   }
 }
 
-async function saveToDisk() {
+async function saveToFirestore() {
   try {
-    const col = await getItemsCollection();
-    const snapshot = await col.get();
-    const existingIds = new Set(snapshot.docs.map(d => d.id));
-    const desiredIds = new Set(Array.from(memoryStore.items.keys()));
+    const snapshot = await itemsCollection.get();
+    const existingIds = new Set(snapshot.docs.map((d) => d.id));
+    const desiredIds = new Set(memoryStore.items.keys());
 
     const batch = firestoreDb.batch();
-    // Upsert all desired docs
     for (const [id, item] of memoryStore.items.entries()) {
       const { id: _omit, ...rest } = item;
-      batch.set(col.doc(id), rest, { merge: true });
+      batch.set(itemsCollection.doc(id), rest, { merge: true });
     }
-    // Delete any docs not present in memory
     for (const id of existingIds) {
       if (!desiredIds.has(id)) {
-        batch.delete(col.doc(id));
+        batch.delete(itemsCollection.doc(id));
       }
     }
 
     await batch.commit();
   } catch (err) {
     console.error('Failed to save items to Firestore:', err);
+    throw err;
   }
 }
 
@@ -121,7 +105,7 @@ app.post('/api/items', async (req, res) => {
     const now = Date.now();
     const item = { id, ...value, createdAt: now, updatedAt: now };
     memoryStore.items.set(id, item);
-    await saveToDisk();
+    await saveToFirestore();
     return res.status(201).json(item);
   } catch (err) {
     console.error(err);
@@ -138,7 +122,7 @@ app.put('/api/items/:id', async (req, res) => {
     const now = Date.now();
     const updated = { ...memoryStore.items.get(id), ...value, updatedAt: now };
     memoryStore.items.set(id, updated);
-    await saveToDisk();
+    await saveToFirestore();
     return res.json(updated);
   } catch (err) {
     console.error(err);
@@ -151,7 +135,7 @@ app.delete('/api/items/:id', async (req, res) => {
   try {
     if (!memoryStore.items.has(id)) return res.status(404).json({ error: 'Not found' });
     memoryStore.items.delete(id);
-    await saveToDisk();
+    await saveToFirestore();
     return res.status(204).end();
   } catch (err) {
     console.error(err);
@@ -170,12 +154,9 @@ app.get('*', (req, res) => {
 
 const port = process.env.PORT || 8080;
 async function bootstrap() {
-  await ensureDataFile();
-  await loadFromDisk();
+  await loadFromFirestore();
   app.listen(port, () => {
     console.log(`Potluck server listening on http://localhost:${port}`);
   });
 }
 bootstrap();
-
-

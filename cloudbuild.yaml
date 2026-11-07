@@ -1,0 +1,65 @@
+# Cloud Build: build image, push to Artifact Registry, deploy to Cloud Run.
+# Trigger this from a GitHub push (main) via Cloud Build GitHub App.
+#
+# Substitutions (override in the trigger if needed):
+#   _REGION  - Cloud Run / Artifact Registry region
+#   _SERVICE - Cloud Run service name
+#   _REPO    - Artifact Registry repository name
+
+substitutions:
+  _REGION: us-west1
+  _SERVICE: potluck-site
+  _REPO: potluck
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$COMMIT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+
+steps:
+  # Ensure Artifact Registry repo exists (no-op if already created)
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: ensure-artifact-repo
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        gcloud artifacts repositories describe ${_REPO} \
+          --location=${_REGION} >/dev/null 2>&1 \
+        || gcloud artifacts repositories create ${_REPO} \
+          --repository-format=docker \
+          --location=${_REGION} \
+          --description="Potluck site images"
+
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$COMMIT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    id: push
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: deploy
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$COMMIT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --port=8080
+      - --set-env-vars=NODE_ENV=production,GOOGLE_CLOUD_PROJECT=$PROJECT_ID
